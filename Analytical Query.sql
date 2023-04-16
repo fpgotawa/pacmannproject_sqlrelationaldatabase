@@ -1,46 +1,55 @@
--- Mencari mobil keluaran 2015 ke atas
+-- Ranking popularitas model mobil berdasarkan jumlah bid
 SELECT
-	*
-FROM cars
-	WHERE year >= 2015;
-	
--- Menambahkan satu data bid produk baru
-INSERT INTO bids(bid_id, ads_id, buyer_id, bid_price, bid_status, date_bid)
-VALUES(201,50,25,200000000,'Sent',TO_DATE('30/11/2022', 'DD/MM/YYYY'))
+	c.model,
+	COUNT(c.product_id) AS count_product,
+	COUNT(b.bid_id) AS count_bid
+FROM cars c, ads a, bids b
+	WHERE c.product_id = a.product_id
+		AND a.ads_id = b.ads_id
+GROUP BY c.model
+ORDER BY count_bid DESC;
 
--- Melihat mobil yang dijual 1 akun dari yang paling baru
+-- Membandingkan harga mobil berdasarkan harga rata-rata per kota
 SELECT
-	c.product_id,
+	ct.city_name,
 	c.brand,
 	c.model,
 	c.year,
 	c.price,
-	a.date_post
-FROM cars c, ads a, sellers s
-	WHERE seller_name = 'Bagus Sitorus'
-		AND s.seller_id = a.seller_id
-		AND a.product_id = c.product_id
-ORDER BY a.date_post DESC;
-
--- Mencari mobil termurah berdasarkan keyword
-SELECT
-	*
-FROM cars
-	WHERE model ILIKE '%yaris%'
-ORDER BY price ASC
-LIMIT 5;
-
--- Mencari mobil terdekat berdasarkan sebuah id kota
-SELECT
-	c.product_id,
-	c.brand,
-	c.model,
-	c.year,
-	c.price,
-	haversine_distance((ct.coordinate), (SELECT coordinate FROM cities WHERE city_id = 3173)) as distance
+	AVG(c.price) OVER(PARTITION BY ct.city_name) AS avg_per_city
 FROM cars c, ads a, sellers s, cities ct
 	WHERE a.product_id = c.product_id
 		AND a.seller_id = s.seller_id
-		AND s.city_id = ct.city_id
-ORDER BY distance
-LIMIT 3;
+		AND s.city_id = ct.city_id;
+		
+-- Dari penawaran suatu model mobil, cari perbandingan tanggal user melakukan bid dengan bid selanjutnya beserta harga tawar yang diberikan
+SELECT
+	model,
+	buyer_id,
+	date_bid AS first_bid_date,
+	bid_price AS first_bid_price
+FROM(
+	SELECT
+		c.model,
+		b.buyer_id,
+		b.date_bid,
+		b.bid_price,
+		min(b.date_bid) OVER(PARTITION BY c.model, b.buyer_id) AS min_date
+	FROM cars c, ads a, bids b
+		WHERE c.product_id = a.product_id
+			AND a.ads_id = b.ads_id
+	) t
+WHERE date_bid = min_date;
+
+-- Membandingkan persentase perbedaan rata-rata harga mobil berdasarkan modelnya dan rata-rata harga bid yang ditawarkan oleh customer pada 6 bulan terakhir
+SELECT
+	c.model,
+	AVG(c.price) AS avg_price,
+	AVG(b.bid_price) AS avg_bid_6month,
+	AVG(c.price) - AVG(b.bid_price) AS difference,
+	(AVG(c.price) - AVG(b.bid_price))/AVG(c.price) AS difference_percent
+FROM cars c, ads a, bids b
+	WHERE c.product_id = a.product_id
+		AND a.ads_id = b.ads_id
+		AND b.date_bid BETWEEN '2022/07/01' AND '2022/12/31'
+GROUP BY c.model
